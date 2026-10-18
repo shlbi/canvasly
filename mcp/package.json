@@ -1,0 +1,20 @@
+{
+  "name": "canvas-unlocked-mcp",
+  "version": "0.2.0",
+  "private": true,
+  "type": "module",
+  "description": "Canvas LMS coursework MCP with agent drafting, review and approval-gated submissions",
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "start": "node src/index.mjs",
+    "test": "node --test",
+    "agent": "node src/cli.mjs"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/server": "^2.3.1",
+    "zod": "^4.0.0"
+  },
+  "license": "MIT"
+}
