@@ -1,6 +1,19 @@
 {
-  "name": "canvasly", "version": "0.3.0", "private": true, "type": "module",
-  "description": "A calm Canvas workspace with a checkpointed coursework agent",
-  "engines": { "node": "22.x" },
-  "scripts": { "dev": "node --env-file-if-exists=.env.local scripts/dev.mjs", "start": "node --env-file-if-exists=.env.local scripts/dev.mjs", "build": "node scripts/check.mjs", "test": "node --test test/*.test.mjs mcp/test/*.test.mjs", "check": "npm run build && npm test" }
+  "name": "canvasly",
+  "version": "0.4.0",
+  "private": true,
+  "type": "module",
+  "description": "Your student agent, with a schedule that understands your life",
+  "engines": {
+    "node": "22.x"
+  },
+  "scripts": {
+    "dev": "node --env-file-if-exists=.env.local scripts/dev.mjs",
+    "start": "node --env-file-if-exists=.env.local scripts/dev.mjs",
+    "build": "node scripts/check.mjs",
+    "test": "node --test test/*.test.mjs mcp/test/*.test.mjs",
+    "check": "npm run build && npm test",
+    "mcp": "node scripts/mcp.mjs",
+    "worker": "node --env-file-if-exists=.env.local scripts/worker.mjs"
+  }
 }

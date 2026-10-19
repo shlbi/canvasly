@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import handler from '../api/index.js';
+import handler from '../lib/legacy-api.mjs';
 import { unseal } from '../lib/security.mjs';
 const env = { APP_ENCRYPTION_KEY: 'ef'.repeat(32), APP_URL: 'http://localhost:3000', SUPABASE_URL: 'https://db.example.test', SUPABASE_PUBLISHABLE_KEY: 'test-anon', SUPABASE_SECRET_KEY: 'test-service', CANVAS_ALLOWED_HOSTS: 'school.instructure.com', OPENAI_API_KEY: 'test-openai-key' };
 Object.assign(process.env, env);
