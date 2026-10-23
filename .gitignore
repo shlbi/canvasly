@@ -9,3 +9,7 @@ test-results/
 .DS_Store
 .canvasly/
 *.patch
+
+# Worker secrets, packages and verified upstream host sandbox profile.
+worker/.env
+worker/seccomp-profile.json

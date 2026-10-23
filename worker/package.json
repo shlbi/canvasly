@@ -1,0 +1,8 @@
+{
+  "name": "canvasly-cloud-worker",
+  "private": true,
+  "type": "module",
+  "version": "0.5.0",
+  "engines": { "node": "22.x" },
+  "dependencies": { "playwright": "1.64.0" }
+}

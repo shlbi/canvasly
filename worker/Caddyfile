@@ -1,0 +1,12 @@
+# HTTPS terminates here. Do not enable request-body/access logging on login routes.
+{$WORKER_HOST} {
+  header {
+    Strict-Transport-Security "max-age=31536000"
+    X-Content-Type-Options "nosniff"
+    Cache-Control "no-store"
+  }
+  request_body {
+    max_size 12KB
+  }
+  reverse_proxy worker:8080
+}

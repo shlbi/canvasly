@@ -6,7 +6,7 @@ import {resolve} from 'node:path';
 import {randomUUID,generateKeyPairSync,sign} from 'node:crypto';
 import {createServer} from 'node:http';
 import {spawn} from 'node:child_process';
-import handler from '../api/workspace.js';
+import handler from '../lib/legacy/workspace-api.mjs';
 import {WorkspaceStore,initializeLocal,accountKey,emptyState,safeState} from '../lib/workspace/store.mjs';
 import {beginChatgpt,completeChatgpt,canvasRegistration,pairMcp,accessToken} from '../lib/workspace/auth.mjs';
 import {executeTool,approveMemory} from '../lib/workspace/tools.mjs';

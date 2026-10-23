@@ -1,47 +1,160 @@
-# canvasly
+# Canvasly
 
-**What can I take off your plate?**
+**An agent for your student life.** Public email/Google accounts, a $20/month subscription, a shared website and remote MCP workspace, course-aware planning, and saved jobs that execute on a self-hosted worker while the student's device is off.
 
-A student agent, not a study-planner dashboard. Talk to the agent, delegate supported coursework, and review what it produces. Planning is the supporting feature: it fits around real work shifts, classes and life, then adjusts estimates using the student's own study check-ins.
+Version **0.5.0** replaces the old ChatGPT-login and invitation-only paths. This is an implementation with automated and fixture validation, **not a claim that live school integrations, billing, or production infrastructure have already been commissioned**. Read the launch checklist before accepting payments.
 
-This revision is **v2 of the product, package version 0.4.0**. It replaces the green/serif dashboard with a neutral conversation workspace. It is an engineering preview with tested local flows, not a claim of approved public integrations or a production security audit.
+## Architecture — keep the moving parts small
 
-## What is implemented
-
-| Surface | Included |
+| Component | Responsibility |
 | --- | --- |
-| Agent | Conversation, current course context, tools to read materials, propose memory/schedule changes, plan, and queue full supported assignment drafts |
-| Delegated work | Persisted plan → write → review jobs, editable complete text/source-file deliverables, manual pause/resume and explicit Canvas submission |
-| Student context | Recurring obligations, overnight shifts, buffers, time zone, possible study window, daily cap, course types, explanation preferences and approved memories |
-| Adaptive planning | Per-course duration estimates based on self-reported study sessions; no inference of mastery from agent-written assignments |
-| Website | Responsive conversation, My work, My week, About you and Connections |
-| MCP | A local stdio bridge using the exact same paired account, profile, Canvas connection and saved drafts as the local website |
-| Authentication | ChatGPT authorization-code/PKCE/OIDC flow, local dynamic registration, hosted registration gates, rotating refresh credentials and encrypted sessions |
-| Canvas | Institution-authorized OAuth, bounded source collection, sync, text/file/URL submission controls |
+| Vercel | Static responsive website and one Node.js API function |
+| Supabase | Email/Google Auth, private Postgres workspaces, subscription state, usage, OAuth grants and a transactional work queue |
+| OpenAI | Our server-funded Responses API; no ChatGPT subscription credentials |
+| Stripe | One recurring USD $20/month Price, hosted Checkout, customer portal and signed subscription webhooks |
+| One self-hosted worker | Sandboxed Chromium/Playwright, secure interactive school login, and saved agent/job steps |
 
-The preview workspace uses a fictitious student and example coursework. No sample data is copied into real accounts. Preview chat and example drafts are explicitly illustrative, not live inference. A student's unknown start time, work days or sleep schedule must be supplied rather than invented.
+There is no Browserbase dependency or fee. `browserbase/mcp-server-browserbase` is an archived MCP adapter that still calls Browserbase, not its browser hosting backend. This project uses ordinary open-source Chromium and Playwright directly; it does not build a browser engine. **The separate worker still needs a paid/owned Linux host and operational maintenance. Vercel deployments do not create or run that host.**
 
-## Two ways to use it
+The official Canvas OAuth API and the browser share one account binding and assignment IDs. API access is preferable for structured course data, materials and verified submissions when an authorized developer key exists. Browser access uses the student's actual school session and follows visible permitted pages and supported external-tool launches. It does not fabricate or generate an API token, bypass denied integration permissions, or guarantee universal school compatibility.
 
-### Website agent using the student's ChatGPT plan
+## What changed
 
-The new workspace does **not** use `OPENAI_API_KEY` or silently fall back to founder-funded API calls. It uses the authorized student's OAuth token at the public Responses endpoint, with `stream: true` and `store: false`. Models are discovered for that signed-in account rather than hardcoded.
+- Public **Sign up / Log in / Get MCP** onboarding. Email/password, email confirmation, recovery and Google via Supabase.
+- Website and OAuth-authenticated **`/mcp`** use the same user, subscription, courses, memory, drafts and queue.
+- A student can connect before paying. Paid computation is checked server-side, including MCP tools and every worker step.
+- One $20/month plan, metered model usage, and an optional database-configured future allowance. No customer email or college allowlist and no hardcoded daily AI-call cap.
+- Agent conversation can read requirements, propose remembered preferences, plan around real obligations and queue complete supported deliverables.
+- Planning supports overnight work/class/activity blocks, timezone, breaks, confirmed availability and course-specific self-reported study pace. Unknown facts are not invented.
+- Independent persisted plan → write → review → optionally submit steps. Browser closure does not cancel jobs. A worker outage keeps queued data; uncertain in-flight effects pause for review rather than replay.
+- Browser connection uses owner-only screenshot/input controls over HTTPS to an existing Chromium browser. Credentials are not put in model prompts, transcripts, logging, recordings or a shared browser. The operator still controls the remote host; do not misrepresent this trust boundary.
+- External tasks have bounded DOM actions, optional screenshots after login checks, iframe/tab handling, session persistence and explicit task-specific submission authorization. Live DOM state is retained between steps; loss of that session pauses rather than blindly replaying an answer.
+- Saved editable text and UTF-8 files, exact-content review/approval hashes, fresh assignment checks and confirmed Canvas receipts. A model review is not an executed test or a verified grade.
 
-OpenAI documents a **local open-source direct flow** separately from **hosted/commercial access**. Hosted sign-in is a limited-trial approval process, and hosted plan usage needs approval too. Neither an `oaiapp_`-looking string nor a feature flag grants access. Confirm the applicable program eligibility and source licensing before distributing this as an open-source integration.
+## 1. Supabase
 
-Sign-in does not import the student's ChatGPT conversations or existing personal context. Canvasly's memory is built from context the student supplies here and explicitly approves. Usage remains subject to the student's plan and app limits; it is not unlimited or “no API” technically. The difference is whose plan authorizes inference.
+Create or select the project you will actually use. Run **`supabase/v3.sql`** in its SQL editor as the project owner. This additive migration leaves historical v1/v2 tables untouched. It creates service-only tables/RPCs: browser/anon roles must not be granted direct workspace, job, billing, token or credential access.
 
-### MCP using the host client's model
+Enable **email/password** with email confirmation. Configure production SMTP; provider default email delivery can restrict external recipients and is not a production mail setup. Set the Auth Site URL to `https://www.trycanvasly.com` and allow this exact redirect:
 
-Start the local website and choose **Connections → Use a local MCP workspace**, or sign in with ChatGPT. Connect Canvas, then **Pair this workspace with MCP**. The stdio bridge reads a private local pairing file. The host model reads requirements, generates the deliverable and stages it in **My work**. The bridge itself does not call a paid model API.
+```text
+https://www.trycanvasly.com/auth/callback
+```
 
-The two surfaces share the *explicitly paired local account*. A local MCP-only account and a new ChatGPT identity are separate until you select and pair the intended account; they are not silently merged. Local accounts do not synchronize automatically to a Vercel-hosted account.
+For Google login, create a Google web OAuth client. Put its client ID/secret into **Supabase → Authentication → Sign In / Providers → Google**, and register the callback Supabase displays in Google Cloud (normally `https://PROJECT.supabase.co/auth/v1/callback`). The Google secret is **not** a Vercel/frontend variable. Enable the appropriate production Google consent configuration. Test email confirmation, Google, password reset and logout on the actual canonical domain.
 
-This build does **not** expose a hosted Streamable HTTP MCP server or publish a ChatGPT plugin. It needs a client that supports **local stdio MCP**. A public remote MCP surface still requires a separately authenticated transport, provider registration and end-to-end client testing.
+Local testing may additionally allow `http://127.0.0.1:3000/auth/callback`; use separate test projects/keys where possible. The new app authenticates Supabase users, not the prior ChatGPT identities. There is no automatic account merge by email. Historical accounts/data need an explicit verified linking/migration process.
 
-## Run locally on Windows
+## 2. Vercel environment variables
 
-Extract the source ZIP into a new folder. Run commands in the folder that actually contains `package.json`:
+Use the exact names in `.env.example`. All are server-read; do not add `NEXT_PUBLIC_` or publish secrets in the website. The public Supabase key is used only for Auth operations in this server-side implementation.
+
+| Variable | Value |
+| --- | --- |
+| `APP_URL` | `https://www.trycanvasly.com` — exact canonical origin, no trailing slash |
+| `SUPABASE_URL` | Your project URL |
+| `SUPABASE_PUBLISHABLE_KEY` | Supabase publishable/legacy anon key for Auth |
+| `SUPABASE_SECRET_KEY` | Server-only secret/legacy service-role key for database operations |
+| `APP_ENCRYPTION_KEY` | Stable 64-character hexadecimal random key |
+| `OPENAI_API_KEY` | Our billed OpenAI project API key |
+| `STRIPE_SECRET_KEY` | A suitably permissioned Stripe restricted key (`rk_`) or server secret key |
+| `STRIPE_WEBHOOK_SECRET` | Signing secret for this deployment's Stripe endpoint |
+| `STRIPE_PRICE_ID` | Active recurring **USD 2000 cents / month** Price |
+| `WORKER_URL` | Separate worker HTTPS origin, e.g. `https://worker.trycanvasly.com` |
+| `WORKER_SECRET` | Separate random secret shared only with the worker, at least 32 characters |
+
+Generate `APP_ENCRYPTION_KEY` and `WORKER_SECRET` separately on your computer:
+
+```cmd
+node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"
+```
+
+Optional: `OPENAI_MODEL` (default `gpt-4.1-mini`), approved Canvas OAuth credentials below, and `CANVAS_FILE_HOSTS` for additional verified attachment storage hosts. The latter is a **file-egress boundary, not a college admission list**.
+
+Remove obsolete `CANVASLY_MODE`, `CHATGPT_CLIENT_*`, `CHATGPT_TOKEN_AUTH_METHOD`, `CHATGPT_PLAN_USAGE_ENABLED`, `ALLOWED_EMAILS`, `CANVAS_ALLOWED_HOSTS`, `DAILY_AI_LIMIT` and `CRON_SECRET` from this deployment. Public registration is open; private/reserved network destinations are still blocked. Wildcard access to internal infrastructure is not part of supporting colleges.
+
+Never change the encryption key casually: existing encrypted sessions/Canvas credentials become unreadable. Keep production, preview and local secrets separate. `APP_URL` must match the site being visited; unexpected preview-origin write requests are rejected intentionally.
+
+### Vercel project settings
+
+Root `.`, framework **Other**, Node **22.x**, install **`npm ci`**, build **`npm run build`**, output **`public`**. `vercel.json` routes the API, callbacks, Stripe webhooks, MCP and OAuth discovery to one native Web Request function. This adapter preserves raw Stripe signature bytes and separate Set-Cookie headers.
+
+Only the new router is exposed. The old `api/workspace.js` and `api/worker.js` routes have been removed; historical engines remain for regression tests. A Git push triggers a deployment only when your Vercel Git integration is connected and enabled. Schema migrations, email/Google, Stripe setup and the worker are not performed by a Git deployment.
+
+## 3. Stripe
+
+Use a separate Stripe sandbox first. Create one Product named **Canvasly** with a recurring monthly **USD $20 Price**. Put that Price ID in `STRIPE_PRICE_ID`; the server verifies the amount/currency/interval rather than accepting a browser-selected price.
+
+Configure hosted Customer Portal so customers can cancel/manage payment methods. Add a webhook endpoint:
+
+```text
+https://www.trycanvasly.com/api/stripe
+```
+
+Subscribe to `customer.subscription.created`, `customer.subscription.updated`, `customer.subscription.deleted`, `invoice.paid`, `invoice.payment_failed`, `checkout.session.completed`, and `checkout.session.async_payment_succeeded`. Copy its signing secret to `STRIPE_WEBHOOK_SECRET`. The handler verifies the **raw body signature**, resolves Stripe Customer/Subscription ownership, queries current subscription state and deduplicates events transactionally. A Checkout success redirect never activates paid access by itself.
+
+The API is pinned to `2026-08-26.dahlia`. Restricted keys need the relevant Customers, Prices, Checkout Sessions, Subscriptions and Billing Portal read/write operations. Keep sandbox keys/Price IDs/webhook secrets separate from live values. No live Product, Price, webhook or payment is created by this source package.
+
+Consider tax obligations before live sales. Stripe Tax requires appropriate configuration/registrations; this integration does not enable automatic tax without them. Choose and disclose actual subscription allowances before selling a plan; the current `canvasly_plans.model_call_limit` is NULL because the owner has not chosen them. NULL is **not** a promise of unlimited usage. Set a positive allowance in that table when decided. Atomic usage reservations and operational anti-abuse/step limits already exist.
+
+## 4. Self-hosted worker (required for unattended work)
+
+A regular Linux server with Docker Compose, supported Chromium sandbox/user namespaces, and an HTTPS hostname is required. Start with enough memory for the configured Chromium capacity, measure actual usage, and scale deliberately. The provided Compose resource ceiling is **4 GB / 2 CPUs / two active browsers**, not a performance guarantee. Registered accounts do not consume an always-open browser; tasks queue and sessions close when finished.
+
+On that server, clone the same committed source as Vercel, copy `worker/.env.example` to `worker/.env`, and fill it in. The worker needs **`APP_ENCRYPTION_KEY`, `SUPABASE_URL`, `SUPABASE_SECRET_KEY`, `OPENAI_API_KEY`, `WORKER_SECRET`**, and `WORKER_HOST` for Compose HTTPS. Encryption/worker keys must match the website. It does not need Stripe or Google credentials. Copy any optional model/Canvas credential configuration needed by the selected API connection too.
+
+Point the worker hostname's DNS at that server. From the repository root:
+
+```bash
+node scripts/prepare-worker.mjs
+docker compose --env-file worker/.env -f worker/compose.yaml up -d --build
+```
+
+The preparation script fetches Playwright's **v1.64.0** seccomp profile and verifies its exact Git blob checksum before writing the host file. Docker Compose enables it, uses non-root Chromium, and keeps the browser sandbox enabled. Unsupported hosts fail the startup probe. **Do not fix sandbox errors with `--no-sandbox`, a privileged container, or an exposed CDP port.** Review the host's user-namespace/AppArmor/firewall configuration. This Docker image has not been built or verified in the generation environment.
+
+Caddy terminates HTTPS on 80/443. The worker's 8080 and internal CONNECT proxy are not published. The worker checks `WORKER_SECRET`; public callers cannot choose an arbitrary account/browser. Network requests are restricted to public HTTPS addresses with DNS pinning, private-IP rejection and no direct WebRTC/QUIC bypass. Also enforce an outbound firewall that denies host/private/metadata networks and limit access to the worker origin. Do not log command bodies, browser frames, credentials or authenticated URLs.
+
+The worker polls a transactionally leased Supabase queue and heartbeats. No Vercel cron or browser tab drives execution. The UI reports a missing/offline worker. Its initial implementation deliberately runs **one model/job step at a time per worker**, with one active step per account. Interactive sessions can coexist within browser capacity. **Use one worker instance initially**: external tasks retain live DOM state on that instance. Multi-host scheduling of live browser sessions needs affinity and a tested session router; scaling replicas without that can pause tasks.
+
+Restart/update the worker from the new commit when application/worker protocol changes. Browser storage is encrypted in Supabase; unfinished form state is not. A process interruption pauses an external workflow for review rather than replaying an ambiguous write. Cookies/MFA may expire: a student must reconnect when the school requires it.
+
+## 5. Canvas connections
+
+**Cloud browser:** Connections → enter the school's HTTPS Canvas origin → Connect cloud browser → use the real school login in the private browser view → complete MFA → Save connection. The backend verifies the Canvas account identity before saving encrypted browser storage. It does not collect personal API tokens or generate one through the UI. Some SSO, passkey, device-bound or anti-automation workflows will require another connection method or remain unsupported. Respect school/vendor permissions; do not bypass security controls.
+
+**Official API:** Use only an institution-enabled or approved global developer key. Register:
+
+```text
+https://www.trycanvasly.com/canvas/callback
+```
+
+Either configure `CANVAS_CLIENT_ID` + `CANVAS_CLIENT_SECRET` for an authorized global registration on Instructure-owned `*.instructure.com` hosts, or use an exact-host credential map for issued school/custom-domain registrations. Global secrets are never sent to an arbitrary user-supplied site:
+
+```dotenv
+CANVAS_OAUTH_CLIENTS_JSON={"school.instructure.com":{"client_id":"ISSUED_ID","client_secret":"ISSUED_SECRET"}}
+```
+
+This mapping selects issued application credentials; it does **not** restrict who may sign up. Never invent a client registration or treat a normal browser login as API authorization. With no eligible API key, the UI reports that API access is unavailable and offers the browser connection. Students must authorize the app within whatever permissions the institution allows.
+
+Both connection methods must resolve to the same school and Canvas user to be combined. Reconnecting another user invalidates previous draft/submit bindings. Disconnect clears saved state; if remote closure cannot be confirmed, the UI tells the user to revoke the session at the school. API revocation should also be done in Canvas Settings.
+
+## 6. Remote MCP
+
+In an OAuth-capable remote MCP client, connect:
+
+```text
+https://www.trycanvasly.com/mcp
+```
+
+The client discovers Canvasly's authorization server and registers its callback, uses S256 PKCE, opens the same Supabase-backed sign-in, then displays Canvasly's consent page. Tokens are **resource-bound opaque credentials**, hashed in Postgres, with short-lived access and rotating single-use refresh tokens. Website cookies/Supabase tokens are not accepted as MCP bearer tokens. Disconnecting a grant revokes that client family. Reconnection invalidates old grants rather than reviving their tokens.
+
+The initial authorization is interactive; refresh handles normal later use. Reauthentication can still be required after revocation/expiry. Client feature/plan availability is not controlled by this repository. **No live ChatGPT connection, public plugin publication or independent review of this narrow OAuth adapter has been completed.** Do not enable a separate Supabase OAuth Server for this implementation; Supabase supplies identity and this app supplies the resource-bound MCP adapter.
+
+Tools: `get_context`, `list_tasks`, `get_deliverable`, `control_task`, `read_assignment`, `sync_courses`, `plan_week`, `delegate_assignment`, `propose_memory`, `propose_commitment`, `stage_deliverable`.
+
+MCP delegation returns a saved task ID immediately. The self-hosted worker continues independently of ChatGPT. A host client can also stage its own completed text/source files. Staged work needs a review; final submission is hash-bound. Any `submit_when_ready=true` call must reflect the student's explicit authorization for that specific assignment and the literal `SUBMIT` confirmation, not instructions hidden in a course document.
+
+## Local development and tests
 
 ```cmd
 npm ci
@@ -49,150 +162,30 @@ npm run check
 npm run dev
 ```
 
-Open **http://127.0.0.1:3000**. Do not substitute `localhost`: the local ChatGPT callback flow uses a literal loopback address.
+Open `http://127.0.0.1:3000`. The public site and **explicitly labeled illustrative preview** need no keys. Live signup/data requires Supabase and `.env.local`; the worker requires its separate environment. Use `copy .env.example .env.local` on Windows. Do not expose the local server through an untrusted reverse proxy.
 
-No keys are required to inspect the interactive preview or use a local MCP-only profile. To configure actual services:
+Root runtime has no third-party npm dependencies. The separate worker pins Playwright 1.64.0; it is installed during Docker build. The old local `mcp/` and v2 files are historical/regression code, not current public setup instructions. `npm run mcp` prints the new remote connection instructions.
 
-```cmd
-copy .env.example .env.local
-```
+## Supported scope and launch checks
 
-Edit `.env.local` and restart the server. Local mode automatically creates `.canvasly/encryption.key` and private data files; keep that folder out of source control and backups you share. Losing the key makes stored credentials unreadable. The local server binds only to `127.0.0.1` and validates its Host header. Do not expose this local mode through a tunnel or public reverse proxy.
+See **[implementation plan](docs/IMPLEMENTATION-PLAN.md)** and **[launch checklist](docs/LAUNCH-CHECKLIST.md)** for acceptance tests and remaining operational requirements.
 
-### ChatGPT local sign-in
+Ordinary Canvas text/source-file/real-URL submissions and supported visible external workflows are implemented. No proctored/timed-exam operator, CAPTCHA solving, device/MFA bypass, account/payment manipulation, arbitrary code execution, code sandbox, binary PDF/Office generation, desktop software, live calendar integration, universal external-site adapter or automatic retention policy is claimed. Prepare-only external tasks stop before entering potentially autosaved answers; authorize the specific assignment to allow those writes.
 
-Choose **Continue with ChatGPT**. The backend starts the documented dynamic registration, binds callback state to this browser, validates the returned identity and saves the issued client registration. Choose the saved account on later launches. Select an available model in Connections. Real provider acceptance and inference must be tested with your own eligible account; they were not tested here.
+API source collection is bounded (active course cap, pagination, selected related pages and small supported attachments); the browser fallback reads visible instructions/rubrics and listings, not every linked document. Missing/partial data is exposed. Unknown due dates are never invented. LTI single-sign-on, iframe/cookie behavior and grade passback need platform-specific testing. A delayed external grade passback yields an unconfirmed result, not a fake receipt.
 
-### Canvas connection
-
-For a multi-student product, use OAuth. Canvas explicitly disallows asking other users to generate and paste personal access tokens. Ask the relevant institution's Canvas administrator to issue/enable an API developer key for Canvasly and register this callback:
-
-```text
-http://127.0.0.1:3000/canvas/callback
-```
-
-For hosted use, register your exact HTTPS origin followed by `/canvas/callback` instead. Use separate registrations when required by the school.
-
-Put exact hostname mappings in `.env.local` or the hosted server environment:
-
-```dotenv
-CANVAS_ALLOWED_HOSTS=school.instructure.com
-CANVAS_OAUTH_CLIENTS_JSON={"school.instructure.com":{"client_id":"ISSUED_ID","client_secret":"ISSUED_SECRET"}}
-```
-
-The JSON value must be one valid JSON object, not escaped twice. Match permitted API scopes to the endpoints used in `lib/canvas.mjs`; an optional `scope` string in each registration is passed into the authorization request. An institution may decline or restrict approval. The app never collects university passwords or bypasses institutional controls.
-
-For testing **your own account only**, `CANVAS_PERSONAL_TEST=true` enables a local-only personal-token form. This switch is ignored in hosted mode. It is not a student onboarding shortcut.
-
-### MCP configuration
-
-Start the website first, connect Canvas, pair the intended account, and add this to a stdio-compatible MCP client:
-
-```json
-{
-  "mcpServers": {
-    "canvasly": {
-      "command": "node",
-      "args": ["C:/actual/path/to/canvasly/scripts/mcp.mjs"]
-    }
-  }
-}
-```
-
-Only the `args` path needs replacing in the default layout. The script resolves `.canvasly` relative to its own repository folder, not the MCP client's working directory. A custom `CANVASLY_DATA_DIR` must be the same absolute directory for the server and bridge. Do not use `npm run mcp` as the host command because npm can print non-protocol text to stdout.
-
-Try: “Read my Canvasly context. Read the OS assignment. Prepare the complete answer or source files and stage the deliverable in My work. Propose any schedule changes; do not submit.”
-
-Tools: `get_context`, `read_assignment`, `plan_week`, `propose_memory`, `propose_commitment`, `stage_deliverable`. The host can save full text and UTF-8 source files. Binary PDFs from Canvas are noted but not returned through the text-only MCP tool. Website drafting can pass supported PDFs to the model. No submission, secret-access or blanket profile-edit tools are exposed to MCP.
-
-## Planning that respects real life
-
-Enter or approve your recurring work/class/activity blocks, possible study window, buffers and daily study cap. A Monday shift from 17:00 to 01:00 protects Monday evening **and Tuesday morning**, including the configured buffer. Time-zone conversion accounts for daylight-saving offsets. The scheduler uses 15-minute slots, honors deadlines and breaks, and reports unscheduled work when capacity is insufficient.
-
-The conversational agent can propose a fully specified recurring block; it must ask for missing days/times. Suggestions appear in **About you → Memory** and affect planning only after approval. Initial availability still requires confirmation in About you.
-
-Log your own study sessions to improve per-course estimates. At least three observations are required before changing the initial pace estimate; early values are shrunk toward the original estimate. Explanation-format preferences and self-reported understanding are editable. This is a transparent heuristic, not a newly trained learning model, diagnosis, fixed “learning style,” or independently verified mastery measurement. Automatic extraction of study duration or grades from behavior is not implemented.
-
-## Work that continues while the browser is closed
-
-The browser creates persisted jobs. It is not the scheduler.
-
-**Local:** `npm run dev` runs a polling worker with the server. Closing the tab is fine; stopping Node, sleeping or shutting down the computer stops execution. Saved queued work is retained. An interrupted in-flight job becomes paused for explicit recovery rather than silently repeating an uncertain model request.
-
-**Hosted:** the repository contains `/api/worker` and `scripts/worker.mjs`, but **nothing has been deployed or scheduled**. Add a trusted scheduler that calls `/api/worker` with `Authorization: Bearer <CRON_SECRET>`, or run `npm run worker` on an always-on server with `APP_URL` and `CRON_SECRET`. Each invocation performs one saved agent/model step. Merely setting environment variables or opening Vercel does not start a scheduler. Validate the scheduler frequency and execution limits for your chosen hosting plan. Public launch needs a production queue/monitoring configuration; the included private-beta polling worker is not a high-throughput queue service.
-
-There is one active model step per student, version-checked data writes and time-limited leases. Timeout/uncertain-response recovery pauses for explicit resume; completed work is not replayed automatically. Account scanning is bounded to 1,000 private-beta accounts; worker fairness is process-local and not a global scheduling guarantee.
-
-## Hosted environment and database
-
-The new app uses verified ChatGPT identity and its own session, not the old Supabase email/password flow. It still uses Supabase Postgres for hosted storage. Run **`supabase/v2.sql`** in your Supabase SQL editor first. Table access is service-only; do not grant browser access to the records table.
-
-| Variable | Purpose |
-| --- | --- |
-| `CANVASLY_MODE=hosted` | Explicit hosted mode; Vercel automatically forces hosted behavior too |
-| `APP_URL` | Exact HTTPS origin of your website |
-| `APP_ENCRYPTION_KEY` | Stable random 32-byte key encoded as 64 hexadecimal characters |
-| `SUPABASE_URL` | Project URL |
-| `SUPABASE_SECRET_KEY` | Server-only Supabase secret key; legacy service-role keys also work |
-| `CHATGPT_CLIENT_ID` | Actual approved OpenAI application registration |
-| `CHATGPT_CLIENT_SECRET` | Only when issued for your registered confidential-client setup |
-| `CHATGPT_TOKEN_AUTH_METHOD` | Registered method: `none`, `client_secret_post`, or `client_secret_basic` |
-| `CHATGPT_PLAN_USAGE_ENABLED` | `true` only once hosted plan usage is approved; default false |
-| `CANVAS_ALLOWED_HOSTS` | Exact institution Canvas hostnames |
-| `CANVAS_OAUTH_CLIENTS_JSON` | Per-institution approved client ID/secret mapping |
-| `CRON_SECRET` | Long random secret shared with your trusted scheduled worker |
-| `ALLOWED_EMAILS` | Recommended private-beta verified-email allowlist |
-| `DAILY_AI_LIMIT` | Optional per-user model calls per UTC day; default 48 |
-| `CANVAS_FILE_HOSTS` | Optional exact authorized attachment storage hosts |
-
-Generate each server secret locally:
-
-```cmd
-node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"
-```
-
-The published direct plan-usage flow is implemented behind explicit local/hosted gates. Confirm that your approved hosted agreement supports the requested plan-usage scopes and token authentication method before enabling it. Identity-only authorization does not power inference. Unsupported provider grants are rejected, not replaced with a hidden API bill.
-
-**Do not add `NEXT_PUBLIC_` prefixes.** Do not put student tokens in Vercel environment variables. `OPENAI_API_KEY`, `SUPABASE_PUBLISHABLE_KEY`, and `OPENAI_MODEL` from the previous website are not used by the new workspace. Supabase Auth redirect settings are no longer the v2 identity flow.
-
-Vercel settings for your own manual deployment remain: root `.`, framework **Other**, Node **22.x**, install `npm ci`, build `npm run build`, output `public`. Register the exact `/auth/callback` and `/canvas/callback` URLs before using real OAuth. No cron is enabled automatically in `vercel.json` and no deployment was created.
-
-## Migration and original code
-
-This is an additive database revision, not a destructive migration. The old `supabase/schema.sql` and old records remain intact. Old Supabase-user accounts are not mapped to ChatGPT identities by matching email: that would be unsafe. Export old data and implement an explicit verified account-linking flow before a migration of real users. There is no automatic cross-account migration in this source package.
-
-The original standalone toolkit remains under `mcp/`. It has its old independent setup and does **not** share v2 records. Its historical personal-token/API-key instructions are for that local legacy tool, not the new multi-user website. The former web API is retained as `lib/legacy-api.mjs` solely for regression coverage and is not exposed by the new API routes.
-
-## Privacy, reliability and boundaries
-
-Credentials and cookies are encrypted using the app key. Local coursework/profile JSON is stored in a private local directory, **not encrypted as a whole**; use full-disk encryption for your computer. The local encryption key resides on that same computer, not in an OS keychain. Hosted records are private to your server secret; back up, expire and delete them according to your operational policy.
-
-Course content is untrusted input. Tokens stay outside model context and UI state. The model has an explicit tool allowlist; profile/memory changes need approval. This mitigates but does not eliminate prompt-injection risk. The native OIDC implementation validates signature, issuer, audience, expiry and nonce; arrange an independent security review and consider a maintained OIDC library before public launch.
-
-`store: false` is not a universal promise of zero provider retention. Read the provider's applicable account/program policies. Sign-out attempts remote revocation and reports when it cannot confirm it. Canvas disconnect clears local credentials and directs users to revoke the grant in Canvas Settings. Data erasure does not retract submissions already sent to the institution.
-
-Supported deliverables are normal text, a bounded set of UTF-8 source files and real URLs staged by the MCP host. There is no code sandbox, proctored/timed quiz automation, external homework-site operator, academic discussion impersonation, browser-use agent, Office/PDF output generator, payment system, automatic calendar integration or remote MCP OAuth server. The new UI does not yet offer arbitrary additional document uploads beyond gathered Canvas materials. Source collection remains bounded; inspect warnings for missing modules, pages and files. Use only authorized content and respect applicable course rules.
-
-Submitting is a separate, explicit browser action tied to the exact saved content hash, review state, current assignment instructions and Canvas-account binding. Unsaved editor changes block submit/review; saving invalidates the prior review. An uncertain submission result requires manual inspection instead of a blind retry. Reviews are model assessments, not verified grades or proof generated code ran.
-
-## Validation
-
-`npm run check` runs syntax/configuration validation and the native tests. This revision has **75 passing automated tests**: 43 original regression tests plus 32 tests of the v2 scheduling, identity, inference, persistent-work and integration paths.
-
-New tests include overnight shifts, DST repeated hours, unavailable-time protection, course-specific pace, signed OIDC fixtures, PKCE/issued-client registration, callback replay rejection, refresh rotation, origin checks, account isolation, memory approval, atomic writes, worker checkpoints, concurrent-worker exclusion, stale-job pause, interrupted/late-error model streams, a real local stdio MCP → HTTP bridge, and a **mocked** Canvas → subscriber-funded inference → edit/review → confirmed submission workflow.
-
-Desktop/mobile Chromium checks rendered the actual frontend source in a local harness, checked navigation, schedule editing, illustrative delegation, draft editing/review invalidation and preview chat. No JavaScript errors or mobile horizontal overflow were observed. Browser URL navigation was restricted in the build environment, so these were a source-rendering harness, not a browser session against live providers.
-
-**Not performed:** a real ChatGPT authorization or inference call, live Canvas login/submission, live Supabase migration, Vercel deployment, production scheduler execution, external MCP-client approval, load test or independent security audit. Passing fixtures is not proof of provider acceptance. Before inviting students, validate the complete configured flow in an authorized test course and confirm external approvals.
+Secrets stay outside model context. Course text and websites are untrusted input. Tool allowlists, credential checks, account isolation, submission hashes and constrained browser actions reduce—but do not eliminate—prompt-injection or browser risk. HTML/model text is escaped in the app. Database access is server-only. The operator must arrange monitoring, backups, retention, privacy disclosures, dependency updates, security review and incident response. This source is not a formal security certification.
 
 ## Primary references
 
-- [ChatGPT plan usage overview](https://developers.openai.com/siwc/token-sharing-open-source)
-- [Website sign-in and commercial access](https://developers.openai.com/siwc/website)
-- [Local registration and PKCE sign-in](https://developers.openai.com/siwc/token-sharing-open-source/sign-in)
-- [Account-specific models and completed inference](https://developers.openai.com/siwc/token-sharing-open-source/models-and-inference)
-- [Token rotation and sessions](https://developers.openai.com/siwc/token-sharing-open-source/profiles-and-sessions)
-- [Canvas OAuth and multi-user API policy](https://developerdocs.instructure.com/services/canvas/oauth2/file.oauth)
-- [MCP stdio transport](https://modelcontextprotocol.io/specification/2025-11-25/basic/transports)
+- [Canvas OAuth and developer-key rules](https://developerdocs.instructure.com/services/canvas/oauth2/file.oauth)
+- [Canvas submissions](https://developerdocs.instructure.com/services/canvas/resources/submissions)
+- [Supabase email authentication](https://supabase.com/docs/guides/auth/passwords)
+- [Supabase Google authentication](https://supabase.com/docs/guides/auth/social-login/auth-google)
+- [Stripe subscription webhooks](https://docs.stripe.com/billing/subscriptions/webhooks)
+- [MCP authorization](https://modelcontextprotocol.io/specification/2025-11-25/basic/authorization)
+- [OpenAI MCP authentication](https://developers.openai.com/plugins/build/auth)
+- [Playwright Docker sandbox guidance](https://playwright.dev/docs/docker)
+- [Browserbase MCP adapter](https://github.com/browserbase/mcp-server-browserbase)
 
-Independent of Canvas, Instructure, OpenAI and any university.
+Independent of Canvas, Instructure, OpenAI, Supabase, Stripe and any school.

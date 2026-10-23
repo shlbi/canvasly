@@ -4,7 +4,7 @@
   "buildCommand": "npm run build",
   "outputDirectory": "public",
   "functions": {
-    "api/*.js": {
+    "api/index.js": {
       "maxDuration": 60,
       "includeFiles": "{lib/**,public/domain.mjs}"
     }
@@ -38,12 +38,52 @@
   ],
   "rewrites": [
     {
+      "source": "/mcp",
+      "destination": "/api/index?route=/mcp"
+    },
+    {
       "source": "/auth/callback",
-      "destination": "/api/workspace?op=auth/callback"
+      "destination": "/api/index?route=/auth/callback"
     },
     {
       "source": "/canvas/callback",
-      "destination": "/api/workspace?op=canvas/callback"
+      "destination": "/api/index?route=/canvas/callback"
+    },
+    {
+      "source": "/api/stripe",
+      "destination": "/api/index?route=/api/stripe"
+    },
+    {
+      "source": "/oauth/authorize",
+      "destination": "/api/index?route=/oauth/authorize"
+    },
+    {
+      "source": "/oauth/token",
+      "destination": "/api/index?route=/oauth/token"
+    },
+    {
+      "source": "/oauth/register",
+      "destination": "/api/index?route=/oauth/register"
+    },
+    {
+      "source": "/oauth/revoke",
+      "destination": "/api/index?route=/oauth/revoke"
+    },
+    {
+      "source": "/.well-known/oauth-authorization-server",
+      "destination": "/api/index?route=/.well-known/oauth-authorization-server"
+    },
+    {
+      "source": "/.well-known/oauth-protected-resource",
+      "destination": "/api/index?route=/.well-known/oauth-protected-resource"
+    },
+    {
+      "source": "/.well-known/oauth-protected-resource/mcp",
+      "destination": "/api/index?route=/.well-known/oauth-protected-resource/mcp"
+    },
+    {
+      "source": "/oauth/consent",
+      "destination": "/index.html"
     }
   ]
 }

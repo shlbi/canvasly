@@ -1,0 +1,35 @@
+# Run from the repository root: docker compose --env-file worker/.env -f worker/compose.yaml up -d --build
+# The worker must be a separate HTTPS host; do not point WORKER_URL at the website itself.
+services:
+  worker:
+    build:
+      context: ..
+      dockerfile: worker/Dockerfile
+    init: true
+    restart: unless-stopped
+    env_file: .env
+    expose: ["8080"]
+    shm_size: 1gb
+    mem_limit: 4g
+    cpus: 2
+    pids_limit: 512
+    security_opt:
+      - no-new-privileges:true
+      - seccomp:./seccomp-profile.json
+    networks: [private]
+  https:
+    image: caddy:2.10.2-alpine
+    restart: unless-stopped
+    ports: ["80:80", "443:443"]
+    environment:
+      WORKER_HOST: ${WORKER_HOST:?Set a worker hostname with DNS pointing at this server}
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    networks: [private]
+volumes:
+  caddy_data:
+  caddy_config:
+networks:
+  private:

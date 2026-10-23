@@ -1,8 +1,9 @@
 import { readdir, readFile } from 'node:fs/promises';
 import { spawnSync } from 'node:child_process';
+/** Check all source syntax, excluding dependencies and private runtime data. */
 async function check(dir) {
   for (const f of await readdir(dir, { withFileTypes: true })) {
-    if (['node_modules', '.git', '.vercel'].includes(f.name)) continue;
+    if (['node_modules', '.git', '.vercel', '.canvasly', '.canvas-unlocked'].includes(f.name)) continue;
     const path = `${dir}/${f.name}`;
     if (f.isDirectory()) await check(path);
     else if (/\.(mjs|js)$/.test(path)) {

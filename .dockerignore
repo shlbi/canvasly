@@ -1,0 +1,16 @@
+.git
+.vercel
+node_modules
+**/node_modules
+.env
+.env.*
+**/.env
+**/.env.*
+.canvasly
+.canvas-unlocked
+**/.canvasly
+**/.canvas-unlocked
+*.zip
+*.patch
+*.png
+*.log
